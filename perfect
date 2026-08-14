@@ -16,24 +16,14 @@ local Window = Rayfield:CreateWindow({
 -- [[ VARIABLES ]]
 local BringEnabled = false
 local AutoBlastEnabled = false
-local AutoSellEnabled = false
 local AutoCollectEnabled = false
 local OresESPEnabled = false
 local AlwaysPerfectEnabled = false
 
 local MiningRemote = game:GetService("ReplicatedStorage"):WaitForChild("shared/network/MiningNetwork@GlobalMiningEvents"):WaitForChild("Mine")
 local CollectRemote = game:GetService("ReplicatedStorage"):WaitForChild("shared/network/MiningNetwork@GlobalMiningEvents"):WaitForChild("CollectItem")
-local SellRemote = game:GetService("ReplicatedStorage"):WaitForChild("Ml"):WaitForChild("SellInventory")
 local ItemsFolder = workspace:FindFirstChild("Items")
 
--- Find Trader Tom NPC
-local TraderTom = nil
-for _, npc in pairs(workspace:GetChildren()) do
-    if npc:IsA("Model") and npc:GetAttribute("Name") == "Trader Tom" then
-        TraderTom = npc
-        break
-    end
-end
 
 -- [[ HOOKS ]]
 local old
@@ -54,9 +44,9 @@ local function ExecuteOriginalBlast()
     if not Root then return end
     
     local startPos = Root.Position
-    local holeWidth = 6  
+    local holeWidth = 10 
     local holeDepth = 15
-    local step = 3       
+    local step = 5     
 
     for x = -holeWidth, holeWidth, step do
         for z = -holeWidth, holeWidth, step do
@@ -72,7 +62,7 @@ local function ExecuteOriginalBlast()
                 end)
             end
         end
-        task.wait() 
+        task.wait(0.1) 
     end
 end
 
@@ -90,7 +80,6 @@ local CreditTab = Window:CreateTab("Credits", 4483362458)
 
 -- [[ MINING SECTION ]]
 MainTab:CreateSection("Mining Features")
-
 MainTab:CreateToggle({
    Name = "Always Perfect Mine",
    CurrentValue = false,
@@ -109,40 +98,19 @@ MainTab:CreateToggle({
       if AutoCollectEnabled then
          task.spawn(function()
             while AutoCollectEnabled do
-               if ItemsFolder then
-                  for _, item in pairs(ItemsFolder:GetChildren()) do
+               local targetFolder = workspace:FindFirstChild("Items")
+               if targetFolder then
+             for _, item in pairs(ItemsFolder:GetChildren()) do
                      CollectRemote:FireServer(item.Name)
-                  end
-               end
-               task.wait(0.5)
+                        end
+                     end
+                  task.wait(0.5)
             end
          end)
       end
    end,
 })
 
-MainTab:CreateToggle({
-   Name = "Auto Sell (Trader Tom)",
-   CurrentValue = false,
-   Flag = "AutoSell",
-   Callback = function(Value)
-      AutoSellEnabled = Value
-      if AutoSellEnabled and TraderTom then
-         task.spawn(function()
-            while AutoSellEnabled do
-               local root = game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-               local oldCFrame = root.CFrame
-               root.CFrame = TraderTom:FindFirstChild("HumanoidRootPart").CFrame
-               task.wait(0.5)
-               SellRemote:FireServer()
-               task.wait(0.5)
-               root.CFrame = oldCFrame
-               task.wait(10)
-            end
-         end)
-      end
-   end,
-})
 
 MainTab:CreateButton({
    Name = "Blast Hole (Original)",
@@ -188,14 +156,6 @@ VisualsTab:CreateToggle({
 })
 
 -- [[ TELEPORT SECTION ]]
-TeleportTab:CreateSection("NPCs")
-TeleportTab:CreateButton({Name = "Trader Tom", Callback = function() tp(TraderTom:FindFirstChild("HumanoidRootPart").CFrame) end})
-TeleportTab:CreateButton({Name = "Sally", Callback = function() tp(CFrame.new(1055, 245, -279)) end})
-TeleportTab:CreateButton({Name = "Bob", Callback = function() tp(CFrame.new(1090, 245, -467)) end})
-TeleportTab:CreateButton({Name = "Doorkeeper Dale", Callback = function() tp(CFrame.new(996, 245, -346)) end})
-TeleportTab:CreateButton({Name = "Driller Dan", Callback = function() tp(CFrame.new(913, 245, -441)) end})
-TeleportTab:CreateButton({Name = "Miner Mike", Callback = function() tp(CFrame.new(956, 245, -229)) end})
-
 TeleportTab:CreateSection("World Locations")
 TeleportTab:CreateButton({Name = "Main Spawn", Callback = function() tp(CFrame.new(1007, 245, -65)) end})
 TeleportTab:CreateButton({Name = "First Area", Callback = function() tp(CFrame.new(1018, 181, -1456)) end})
