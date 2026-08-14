@@ -1,0 +1,232 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+   Name = "Mining Utility Hub | Solo Development",
+   LoadingTitle = "Raph007 / ItsChe4p",
+   LoadingSubtitle = "Configuration Loaded",
+   ConfigurationSaving = {
+      Enabled = true,
+      FolderName = "GeminiMining",
+      FileName = "SoloConfig"
+   },
+   KeySystem = false,
+   Theme = "Ocean" 
+})
+
+-- [[ VARIABLES ]]
+local BringEnabled = false
+local AutoBlastEnabled = false
+local AutoSellEnabled = false
+local AutoCollectEnabled = false
+local OresESPEnabled = false
+local AlwaysPerfectEnabled = false
+
+local MiningRemote = game:GetService("ReplicatedStorage"):WaitForChild("shared/network/MiningNetwork@GlobalMiningEvents"):WaitForChild("Mine")
+local CollectRemote = game:GetService("ReplicatedStorage"):WaitForChild("shared/network/MiningNetwork@GlobalMiningEvents"):WaitForChild("CollectItem")
+local SellRemote = game:GetService("ReplicatedStorage"):WaitForChild("Ml"):WaitForChild("SellInventory")
+local ItemsFolder = workspace:FindFirstChild("Items")
+
+-- Find Trader Tom NPC
+local TraderTom = nil
+for _, npc in pairs(workspace:GetChildren()) do
+    if npc:IsA("Model") and npc:GetAttribute("Name") == "Trader Tom" then
+        TraderTom = npc
+        break
+    end
+end
+
+-- [[ HOOKS ]]
+local old
+old = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+    if self == MiningRemote and method == "FireServer" and AlwaysPerfectEnabled then
+        if typeof(args[2]) == "number" then
+            args[2] = 1 -- Force perfect mining
+        end
+    end
+    return old(self, unpack(args))
+end))
+
+-- [[ FUNCTIONS ]]
+local function ExecuteOriginalBlast()
+    local Root = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not Root then return end
+    
+    local startPos = Root.Position
+    local holeWidth = 6  
+    local holeDepth = 15
+    local step = 3       
+
+    for x = -holeWidth, holeWidth, step do
+        for z = -holeWidth, holeWidth, step do
+            for y = 1, holeDepth, step do
+                local targetVector = Vector3.new(
+                    startPos.X + x,
+                    startPos.Y - y, 
+                    startPos.Z + z
+                )
+                
+                task.spawn(function()
+                    MiningRemote:FireServer(targetVector, 1)
+                end)
+            end
+        end
+        task.wait() 
+    end
+end
+
+local function tp(pos)
+    local root = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if root then root.CFrame = pos end
+end
+
+-- [[ TABS ]]
+local MainTab = Window:CreateTab("Automation", 4483362458)
+local VisualsTab = Window:CreateTab("Visuals", 4483362458)
+local TeleportTab = Window:CreateTab("Teleports", 4483362458)
+local MiscTab = Window:CreateTab("Misc", 4483362458)
+local CreditTab = Window:CreateTab("Credits", 4483362458)
+
+-- [[ MINING SECTION ]]
+MainTab:CreateSection("Mining Features")
+
+MainTab:CreateToggle({
+   Name = "Always Perfect Mine",
+   CurrentValue = false,
+   Flag = "AlwaysPerfect",
+   Callback = function(Value)
+      AlwaysPerfectEnabled = Value
+   end,
+})
+
+MainTab:CreateToggle({
+   Name = "Auto Collect Ores (Remote)",
+   CurrentValue = false,
+   Flag = "AutoCollect",
+   Callback = function(Value)
+      AutoCollectEnabled = Value
+      if AutoCollectEnabled then
+         task.spawn(function()
+            while AutoCollectEnabled do
+               if ItemsFolder then
+                  for _, item in pairs(ItemsFolder:GetChildren()) do
+                     CollectRemote:FireServer(item.Name)
+                  end
+               end
+               task.wait(0.5)
+            end
+         end)
+      end
+   end,
+})
+
+MainTab:CreateToggle({
+   Name = "Auto Sell (Trader Tom)",
+   CurrentValue = false,
+   Flag = "AutoSell",
+   Callback = function(Value)
+      AutoSellEnabled = Value
+      if AutoSellEnabled and TraderTom then
+         task.spawn(function()
+            while AutoSellEnabled do
+               local root = game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+               local oldCFrame = root.CFrame
+               root.CFrame = TraderTom:FindFirstChild("HumanoidRootPart").CFrame
+               task.wait(0.5)
+               SellRemote:FireServer()
+               task.wait(0.5)
+               root.CFrame = oldCFrame
+               task.wait(10)
+            end
+         end)
+      end
+   end,
+})
+
+MainTab:CreateButton({
+   Name = "Blast Hole (Original)",
+   Callback = function()
+      Rayfield:Notify({Title = "Blasting", Content = "Creating hole beneath you...", Duration = 2})
+      ExecuteOriginalBlast()
+   end,
+})
+
+-- [[ VISUALS SECTION ]]
+VisualsTab:CreateSection("ESP")
+
+VisualsTab:CreateToggle({
+   Name = "Ores ESP",
+   CurrentValue = false,
+   Flag = "OreESP",
+   Callback = function(Value)
+      OresESPEnabled = Value
+      if OresESPEnabled then
+         task.spawn(function()
+            while OresESPEnabled do
+               for _, item in pairs(ItemsFolder:GetChildren()) do
+                  if not item:FindFirstChild("OreESP") and item:IsA("BasePart") then
+                     local box = Instance.new("BoxHandleAdornment", item)
+                     box.Name = "OreESP"
+                     box.Adornee = item
+                     box.AlwaysOnTop = true
+                     box.Size = item.Size
+                     box.ZIndex = 0
+                     box.Transparency = 0.5
+                     box.Color3 = item.Color
+                  end
+               end
+               task.wait(1)
+            end
+         end)
+      else
+         for _, item in pairs(ItemsFolder:GetDescendants()) do
+            if item.Name == "OreESP" then item:Destroy() end
+         end
+      end
+   end,
+})
+
+-- [[ TELEPORT SECTION ]]
+TeleportTab:CreateSection("NPCs")
+TeleportTab:CreateButton({Name = "Trader Tom", Callback = function() tp(TraderTom:FindFirstChild("HumanoidRootPart").CFrame) end})
+TeleportTab:CreateButton({Name = "Sally", Callback = function() tp(CFrame.new(1055, 245, -279)) end})
+TeleportTab:CreateButton({Name = "Bob", Callback = function() tp(CFrame.new(1090, 245, -467)) end})
+TeleportTab:CreateButton({Name = "Doorkeeper Dale", Callback = function() tp(CFrame.new(996, 245, -346)) end})
+TeleportTab:CreateButton({Name = "Driller Dan", Callback = function() tp(CFrame.new(913, 245, -441)) end})
+TeleportTab:CreateButton({Name = "Miner Mike", Callback = function() tp(CFrame.new(956, 245, -229)) end})
+
+TeleportTab:CreateSection("World Locations")
+TeleportTab:CreateButton({Name = "Main Spawn", Callback = function() tp(CFrame.new(1007, 245, -65)) end})
+TeleportTab:CreateButton({Name = "First Area", Callback = function() tp(CFrame.new(1018, 181, -1456)) end})
+TeleportTab:CreateButton({Name = "Snow Area", Callback = function() tp(CFrame.new(1011, 177, -2906)) end})
+
+-- [[ MISC SECTION ]]
+MiscTab:CreateSection("Character & Utility")
+MiscTab:CreateSlider({
+   Name = "Walkspeed",
+   Range = {16, 150},
+   Increment = 1,
+   CurrentValue = 16,
+   Callback = function(Value)
+      game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = Value
+   end,
+})
+
+MiscTab:CreateButton({
+   Name = "Enable Anti-AFK",
+   Callback = function()
+      local bb = game:GetService("VirtualUser")
+      game.Players.LocalPlayer.Idled:Connect(function()
+         bb:CaptureController()
+         bb:ClickButton2(Vector2.new())
+      end)
+      Rayfield:Notify({Title = "Anti-AFK", Content = "Anti-AFK is now active.", Duration = 3})
+   end,
+})
+
+-- [[ CREDITS SECTION ]]
+CreditTab:CreateSection("Solo Developer")
+CreditTab:CreateLabel("Creator: Raph007 / ItsChe4p")
+CreditTab:CreateDivider()
+CreditTab:CreateParagraph({Title = "Status", Content = "Integrated new features: ESP, Auto-Sell, and Always Perfect."})
