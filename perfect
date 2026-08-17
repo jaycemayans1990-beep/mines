@@ -10,34 +10,37 @@ local Window = Rayfield:CreateWindow({
       FileName = "SoloConfig"
    },
    KeySystem = false,
-   Theme = "Ocean",
-   DisableRayfieldPrompts = true,
-   DisableBuildWarnings = true
+   Theme = "Ocean" 
 })
 
 -- [[ VARIABLES ]]
-local BringEnabled = false
-local AutoBlastEnabled = false
 local AutoCollectEnabled = false
 local OresESPEnabled = false
 local AlwaysPerfectEnabled = false
 
-local MiningRemote = game:GetService("ReplicatedStorage"):WaitForChild("shared/network/MiningNetwork@GlobalMiningEvents"):WaitForChild("Mine")
-local CollectRemote = game:GetService("ReplicatedStorage"):WaitForChild("shared/network/MiningNetwork@GlobalMiningEvents"):WaitForChild("CollectItem")
-local ItemsFolder = workspace:FindFirstChild("Items")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local MiningRemote = ReplicatedStorage:WaitForChild("shared/network/MiningNetwork@GlobalMiningEvents"):WaitForChild("Mine")
+local CollectRemote = ReplicatedStorage:WaitForChild("shared/network/MiningNetwork@GlobalMiningEvents"):WaitForChild("CollectItem")
 
+-- Dynamic Item Folder Resolver
+local function GetItemsFolder()
+    return workspace:FindFirstChild("Items")
+end
 
 -- [[ HOOKS ]]
 local old
 old = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
     local method = getnamecallmethod()
-    local args = {...}
-    if self == MiningRemote and method == "FireServer" and AlwaysPerfectEnabled then
+    
+    if not checkcaller() and self == MiningRemote and method == "FireServer" and AlwaysPerfectEnabled then
+        local args = {...}
         if typeof(args[2]) == "number" then
             args[2] = 1 -- Force perfect mining
+            return old(self, unpack(args))
         end
     end
-    return old(self, unpack(args))
+    
+    return old(self, ...)
 end))
 
 -- [[ FUNCTIONS ]]
@@ -46,8 +49,8 @@ local function ExecuteOriginalBlast()
     if not Root then return end
     
     local startPos = Root.Position
-    local holeWidth = 10 
-    local holeDepth = 15
+    local holeWidth = 6
+    local holeDepth = 20
     local step = 5     
 
     for x = -holeWidth, holeWidth, step do
@@ -70,7 +73,9 @@ end
 
 local function tp(pos)
     local root = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if root then root.CFrame = pos end
+    if root then 
+        root.CFrame = pos 
+    end
 end
 
 -- [[ TABS ]]
@@ -78,7 +83,6 @@ local MainTab = Window:CreateTab("Automation", 4483362458)
 local VisualsTab = Window:CreateTab("Visuals", 4483362458)
 local TeleportTab = Window:CreateTab("Teleports", 4483362458)
 local MiscTab = Window:CreateTab("Misc", 4483362458)
-local CreditTab = Window:CreateTab("Credits", 4483362458)
 
 -- [[ MINING SECTION ]]
 MainTab:CreateSection("Mining Features")
@@ -100,9 +104,10 @@ MainTab:CreateToggle({
       if AutoCollectEnabled then
          task.spawn(function()
             while AutoCollectEnabled do
-               local targetFolder = workspace:FindFirstChild("Items")
-               if targetFolder then
-                  for _, item in pairs(ItemsFolder:GetChildren()) do
+               local itemsFolder = GetItemsFolder()
+               if itemsFolder then
+                  for _, item in pairs(itemsFolder:GetChildren()) do
+                     if not AutoCollectEnabled then break end
                      CollectRemote:FireServer(item.Name)
                   end
                end
@@ -116,6 +121,7 @@ MainTab:CreateToggle({
 MainTab:CreateButton({
    Name = "Blast Hole (Original)",
    Callback = function()
+      Rayfield:Notify({Title = "Blasting", Content = "Creating hole beneath you...", Duration = 2})
       ExecuteOriginalBlast()
    end,
 })
@@ -132,24 +138,35 @@ VisualsTab:CreateToggle({
       if OresESPEnabled then
          task.spawn(function()
             while OresESPEnabled do
-               for _, item in pairs(ItemsFolder:GetChildren()) do
-                  if not item:FindFirstChild("OreESP") and item:IsA("BasePart") then
-                     local box = Instance.new("BoxHandleAdornment", item)
-                     box.Name = "OreESP"
-                     box.Adornee = item
-                     box.AlwaysOnTop = true
-                     box.Size = item.Size
-                     box.ZIndex = 0
-                     box.Transparency = 0.5
-                     box.Color3 = item.Color
+               local itemsFolder = GetItemsFolder()
+               if itemsFolder then
+                  for _, item in pairs(itemsFolder:GetChildren()) do
+                     local targetPart = item:IsA("BasePart") and item or (item:IsA("Model") and item.PrimaryPart)
+                     
+                     if targetPart and not item:FindFirstChild("OreESP") then
+                        local box = Instance.new("BoxHandleAdornment")
+                        box.Name = "OreESP"
+                        box.Adornee = targetPart
+                        box.AlwaysOnTop = true
+                        box.Size = item:IsA("Model") and item:GetExtentsSize() or targetPart.Size
+                        box.ZIndex = 1
+                        box.Transparency = 0.5
+                        box.Color3 = targetPart.Color
+                        box.Parent = item
+                     end
                   end
                end
                task.wait(1)
             end
          end)
       else
-         for _, item in pairs(ItemsFolder:GetDescendants()) do
-            if item.Name == "OreESP" then item:Destroy() end
+         local itemsFolder = GetItemsFolder()
+         if itemsFolder then
+            for _, item in pairs(itemsFolder:GetDescendants()) do
+               if item.Name == "OreESP" then 
+                  item:Destroy() 
+               end
+            end
          end
       end
    end,
@@ -162,7 +179,7 @@ TeleportTab:CreateButton({Name = "First Area", Callback = function() tp(CFrame.n
 TeleportTab:CreateButton({Name = "Snow Area", Callback = function() tp(CFrame.new(1011, 177, -2906)) end})
 
 -- [[ MISC SECTION ]]
-MiscTab:CreateSection("Character & Utility")
+MiscTab:CreateSection("Utilities")
 MiscTab:CreateButton({
    Name = "Enable Anti-AFK",
    Callback = function()
@@ -171,11 +188,6 @@ MiscTab:CreateButton({
          bb:CaptureController()
          bb:ClickButton2(Vector2.new())
       end)
+      Rayfield:Notify({Title = "Anti-AFK", Content = "Anti-AFK is now active.", Duration = 3})
    end,
 })
-
--- [[ CREDITS SECTION ]]
-CreditTab:CreateSection("Solo Developer")
-CreditTab:CreateLabel("Creator: Raph007 / ItsChe4p")
-CreditTab:CreateDivider()
-CreditTab:CreateParagraph({Title = "Status", Content = "Integrated new features: ESP, Auto-Sell, and Always Perfect."})
