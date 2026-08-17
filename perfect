@@ -10,7 +10,9 @@ local Window = Rayfield:CreateWindow({
       FileName = "SoloConfig"
    },
    KeySystem = false,
-   Theme = "Ocean" 
+   Theme = "Ocean",
+   DisableRayfieldPrompts = true,
+   DisableBuildWarnings = true
 })
 
 -- [[ VARIABLES ]]
@@ -100,22 +102,20 @@ MainTab:CreateToggle({
             while AutoCollectEnabled do
                local targetFolder = workspace:FindFirstChild("Items")
                if targetFolder then
-             for _, item in pairs(ItemsFolder:GetChildren()) do
+                  for _, item in pairs(ItemsFolder:GetChildren()) do
                      CollectRemote:FireServer(item.Name)
-                        end
-                     end
-                  task.wait(0.5)
+                  end
+               end
+               task.wait(0.5)
             end
          end)
       end
    end,
 })
 
-
 MainTab:CreateButton({
    Name = "Blast Hole (Original)",
    Callback = function()
-      Rayfield:Notify({Title = "Blasting", Content = "Creating hole beneath you...", Duration = 2})
       ExecuteOriginalBlast()
    end,
 })
@@ -163,16 +163,6 @@ TeleportTab:CreateButton({Name = "Snow Area", Callback = function() tp(CFrame.ne
 
 -- [[ MISC SECTION ]]
 MiscTab:CreateSection("Character & Utility")
-MiscTab:CreateSlider({
-   Name = "Walkspeed",
-   Range = {16, 150},
-   Increment = 1,
-   CurrentValue = 16,
-   Callback = function(Value)
-      game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = Value
-   end,
-})
-
 MiscTab:CreateButton({
    Name = "Enable Anti-AFK",
    Callback = function()
@@ -181,7 +171,6 @@ MiscTab:CreateButton({
          bb:CaptureController()
          bb:ClickButton2(Vector2.new())
       end)
-      Rayfield:Notify({Title = "Anti-AFK", Content = "Anti-AFK is now active.", Duration = 3})
    end,
 })
 
