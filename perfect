@@ -1,60 +1,44 @@
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-
-local Window = Rayfield:CreateWindow({
-   Name = "Mining Utility Hub | Solo Development",
-   LoadingTitle = "Raph007 / ItsChe4p",
-   LoadingSubtitle = "Configuration Loaded",
-   ConfigurationSaving = {
-      Enabled = true,
-      FolderName = "GeminiMining",
-      FileName = "SoloConfig"
-   },
-   KeySystem = false,
-   Theme = "Ocean" 
-})
-
--- [[ SERVICES ]]
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local VirtualUser = game:GetService("VirtualUser")
-
-local LocalPlayer = Players.LocalPlayer
-
--- [[ VARIABLES ]]
+-- [[ 1. ตัวแปรทั้งหมด (Variables) ]]
 local AutoCollectEnabled = false
 local OresESPEnabled = false
 local AlwaysPerfectEnabled = false
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MiningRemote = ReplicatedStorage:WaitForChild("shared/network/MiningNetwork@GlobalMiningEvents"):WaitForChild("Mine")
 local CollectRemote = ReplicatedStorage:WaitForChild("shared/network/MiningNetwork@GlobalMiningEvents"):WaitForChild("CollectItem")
 
--- Dynamic Item Folder Resolver
+-- โหลด Ourrodos UI Library
+local Ourrodos = loadstring(game:HttpGet("https://raw.githubusercontent.com/Ourrodos/UI-Library/main/source.lua"))()
+
+-- สร้างหน้าต่างหลัก (Window)
+local Window = Ourrodos:CreateWindow({
+    Title = "Mining Utility Hub | Solo Development",
+    Subtitle = "Configuration Loaded",
+    Theme = "Default"
+})
+
+
+-- [[ 2. ฟังก์ชันการทำงานหลัก (Functions) ]]
+
+-- 1. ฟังก์ชันค้นหาโฟลเดอร์เก็บไอเทม
 local function GetItemsFolder()
     return workspace:FindFirstChild("Items")
 end
 
--- [[ HOOKS ]]
-local old
-old = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-    local method = getnamecallmethod()
-    
-    if not checkcaller() and self == MiningRemote and method == "FireServer" and AlwaysPerfectEnabled then
-        local args = {...}
-        if typeof(args[2]) == "number" then
-            args[2] = 1 -- Force perfect mining
-            return old(self, table.unpack(args))
-        end
+-- 2. ฟังก์ชันเทเลพอร์ต (Teleport)
+local function tp(pos)
+    local root = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if root then 
+        root.CFrame = pos 
     end
-    
-    return old(self, ...)
-end))
+end
 
--- [[ FUNCTIONS ]]
+-- 3. ฟังก์ชันขุดเจาะรูอัตโนมัติ (Execute Original Blast)
 local function ExecuteOriginalBlast()
-    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not root then return end
+    local Root = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not Root then return end
     
-    local startPos = root.Position
+    local startPos = Root.Position
     local holeWidth = 6
     local holeDepth = 20
     local step = 5     
@@ -68,130 +52,162 @@ local function ExecuteOriginalBlast()
                     startPos.Z + z
                 )
                 
-                MiningRemote:FireServer(targetVector, 1)
-                task.wait(0.01) -- ป้องกัน Remote Spam Disconnect
+                task.spawn(function()
+                    MiningRemote:FireServer(targetVector, 1)
+                end)
             end
         end
-        task.wait(0.05) 
+        task.wait(0.1) 
     end
 end
 
-local function tp(pos)
-    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if root then 
-        root.CFrame = pos 
+
+-- [[ 3. ระบบ Hook เมธอด (Hooks) ]]
+local old
+old = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    
+    if not checkcaller() and self == MiningRemote and method == "FireServer" and AlwaysPerfectEnabled then
+        local args = {...}
+        if typeof(args[2]) == "number" then
+            args[2] = 1 -- Force perfect mining
+            return old(self, unpack(args))
+        end
     end
-end
+    
+    return old(self, ...)
+end))
 
--- [[ TABS ]]
-local MainTab = Window:CreateTab("Automation", 4483362458)
-local VisualsTab = Window:CreateTab("Visuals", 4483362458)
-local TeleportTab = Window:CreateTab("Teleports", 4483362458)
-local MiscTab = Window:CreateTab("Misc", 4483362458)
 
--- [[ MINING SECTION ]]
+-- [[ 4. การสร้างแท็บและเมนู UI (Ourrodos UI Structure) ]]
+
+-- สร้างแท็บ (Tabs)
+local MainTab = Window:CreateTab("Automation")
+local VisualsTab = Window:CreateTab("Visuals")
+local TeleportTab = Window:CreateTab("Teleports")
+local MiscTab = Window:CreateTab("Misc")
+
+-- 4.1 แท็บ Automation (Mining)
 MainTab:CreateSection("Mining Features")
+
 MainTab:CreateToggle({
-   Name = "Always Perfect Mine",
-   CurrentValue = false,
-   Flag = "AlwaysPerfect",
-   Callback = function(Value)
-      AlwaysPerfectEnabled = Value
-   end,
+    Name = "Always Perfect Mine",
+    Default = false,
+    Callback = function(Value)
+        AlwaysPerfectEnabled = Value
+    end
 })
 
 MainTab:CreateToggle({
-   Name = "Auto Collect Ores (Remote)",
-   CurrentValue = false,
-   Flag = "AutoCollect",
-   Callback = function(Value)
-      AutoCollectEnabled = Value
-      if AutoCollectEnabled then
-         task.spawn(function()
-            while AutoCollectEnabled do
-               local itemsFolder = GetItemsFolder()
-               if itemsFolder then
-                  for _, item in pairs(itemsFolder:GetChildren()) do
-                     if not AutoCollectEnabled then break end
-                     CollectRemote:FireServer(item.Name)
-                  end
-               end
-               task.wait(0.5)
-            end
-         end)
-      end
-   end,
+    Name = "Auto Collect Ores (Remote)",
+    Default = false,
+    Callback = function(Value)
+        AutoCollectEnabled = Value
+        if AutoCollectEnabled then
+            task.spawn(function()
+                while AutoCollectEnabled do
+                    local itemsFolder = GetItemsFolder()
+                    if itemsFolder then
+                        for _, item in pairs(itemsFolder:GetChildren()) do
+                            if not AutoCollectEnabled then break end
+                            CollectRemote:FireServer(item.Name)
+                        end
+                    end
+                    task.wait(0.5)
+                end
+            end)
+        end
+    end
 })
 
 MainTab:CreateButton({
-   Name = "Blast Hole (Original)",
-   Callback = function()
-      Rayfield:Notify({Title = "Blasting", Content = "Creating hole beneath you...", Duration = 2})
-      ExecuteOriginalBlast()
-   end,
+    Name = "Blast Hole (Original)",
+    Callback = function()
+        Ourrodos:Notify({Title = "Blasting", Content = "Creating hole beneath you...", Duration = 2})
+        ExecuteOriginalBlast()
+    end
 })
 
--- [[ VISUALS SECTION ]]
+-- 4.2 แท็บ Visuals (ESP)
 VisualsTab:CreateSection("ESP")
 
 VisualsTab:CreateToggle({
-   Name = "Ores ESP",
-   CurrentValue = false,
-   Flag = "OreESP",
-   Callback = function(Value)
-      OresESPEnabled = Value
-      if OresESPEnabled then
-         task.spawn(function()
-            while OresESPEnabled do
-               local itemsFolder = GetItemsFolder()
-               if itemsFolder then
-                  for _, item in pairs(itemsFolder:GetChildren()) do
-                     local targetPart = item:IsA("BasePart") and item or (item:IsA("Model") and item.PrimaryPart)
-                     
-                     if targetPart and not item:FindFirstChild("OreESP") then
-                        local box = Instance.new("BoxHandleAdornment")
-                        box.Name = "OreESP"
-                        box.Adornee = targetPart
-                        box.AlwaysOnTop = true
-                        box.Size = item:IsA("Model") and item:GetExtentsSize() or targetPart.Size
-                        box.ZIndex = 1
-                        box.Transparency = 0.5
-                        box.Color3 = targetPart.Color
-                        box.Parent = item
-                     end
-                  end
-               end
-               task.wait(1)
+    Name = "Ores ESP",
+    Default = false,
+    Callback = function(Value)
+        OresESPEnabled = Value
+        if OresESPEnabled then
+            task.spawn(function()
+                while OresESPEnabled do
+                    local itemsFolder = GetItemsFolder()
+                    if itemsFolder then
+                        for _, item in pairs(itemsFolder:GetChildren()) do
+                            local targetPart = item:IsA("BasePart") and item or (item:IsA("Model") and item.PrimaryPart)
+                            
+                            if targetPart and not item:FindFirstChild("OreESP") then
+                                local box = Instance.new("BoxHandleAdornment")
+                                box.Name = "OreESP"
+                                box.Adornee = targetPart
+                                box.AlwaysOnTop = true
+                                box.Size = item:IsA("Model") and item:GetExtentsSize() or targetPart.Size
+                                box.ZIndex = 1
+                                box.Transparency = 0.5
+                                box.Color3 = targetPart.Color
+                                box.Parent = item
+                            end
+                        end
+                    end
+                    task.wait(1)
+                end
+            end)
+        else
+            local itemsFolder = GetItemsFolder()
+            if itemsFolder then
+                for _, item in pairs(itemsFolder:GetDescendants()) do
+                    if item.Name == "OreESP" then 
+                        item:Destroy() 
+                    end
+                end
             end
-         end)
-      else
-         local itemsFolder = GetItemsFolder()
-         if itemsFolder then
-            for _, item in pairs(itemsFolder:GetDescendants()) do
-               if item.Name == "OreESP" then 
-                  item:Destroy() 
-               end
-            end
-         end
-      end
-   end,
+        end
+    end
 })
 
--- [[ TELEPORT SECTION ]]
+-- 4.3 แท็บ Teleports
 TeleportTab:CreateSection("World Locations")
-TeleportTab:CreateButton({Name = "Main Spawn", Callback = function() tp(CFrame.new(1007, 245, -65)) end})
-TeleportTab:CreateButton({Name = "First Area", Callback = function() tp(CFrame.new(1018, 181, -1456)) end})
-TeleportTab:CreateButton({Name = "Snow Area", Callback = function() tp(CFrame.new(1011, 177, -2906)) end})
 
--- [[ MISC SECTION ]]
+TeleportTab:CreateButton({
+    Name = "Main Spawn",
+    Callback = function() 
+        tp(CFrame.new(1007, 245, -65)) 
+    end
+})
+
+TeleportTab:CreateButton({
+    Name = "First Area",
+    Callback = function() 
+        tp(CFrame.new(1018, 181, -1456)) 
+    end
+})
+
+TeleportTab:CreateButton({
+    Name = "Snow Area",
+    Callback = function() 
+        tp(CFrame.new(1011, 177, -2906)) 
+    end
+})
+
+-- 4.4 แท็บ Misc (Utilities)
 MiscTab:CreateSection("Utilities")
+
 MiscTab:CreateButton({
-   Name = "Enable Anti-AFK",
-   Callback = function()
-      LocalPlayer.Idled:Connect(function()
-         VirtualUser:CaptureController()
-         VirtualUser:ClickButton2(Vector2.new())
-      end)
-      Rayfield:Notify({Title = "Anti-AFK", Content = "Anti-AFK is now active.", Duration = 3})
-   end,
+    Name = "Enable Anti-AFK",
+    Callback = function()
+        local bb = game:GetService("VirtualUser")
+        game.Players.LocalPlayer.Idled:Connect(function()
+            bb:CaptureController()
+            bb:ClickButton2(Vector2.new())
+        end)
+        Ourrodos:Notify({Title = "Anti-AFK", Content = "Anti-AFK is now active.", Duration = 3})
+    end
 })
