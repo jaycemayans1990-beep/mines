@@ -2,33 +2,30 @@
 local AutoCollectEnabled = false
 local OresESPEnabled = false
 local AlwaysPerfectEnabled = false
-local UILocked = false -- สถานะการล็อค UI
+local UILocked = false
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
+-- รองรับ Executor ทุกค่าย (gethui fallback)
+local ParentGui = (gethui and gethui()) or CoreGui or LocalPlayer:WaitForChild("PlayerGui")
+
 local MiningRemote = ReplicatedStorage:WaitForChild("shared/network/MiningNetwork@GlobalMiningEvents"):WaitForChild("Mine")
 local CollectRemote = ReplicatedStorage:WaitForChild("shared/network/MiningNetwork@GlobalMiningEvents"):WaitForChild("CollectItem")
 
 
 -- [[ 2. ฟังก์ชันการทำงานหลัก (Functions) ]]
-
--- 1. ฟังก์ชันค้นหาโฟลเดอร์เก็บไอเทม
 local function GetItemsFolder()
     return workspace:FindFirstChild("Items")
 end
 
--- 2. ฟังก์ชันเทเลพอร์ต (Teleport)
 local function tp(pos)
     local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if root then 
-        root.CFrame = pos 
-    end
+    if root then root.CFrame = pos end
 end
 
--- 3. ฟังก์ชันขุดเจาะรูอัตโนมัติ (Execute Original Blast)
 local function ExecuteOriginalBlast()
     local Root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not Root then return end
@@ -61,32 +58,28 @@ end
 local old
 old = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
     local method = getnamecallmethod()
-    
     if not checkcaller() and self == MiningRemote and method == "FireServer" and AlwaysPerfectEnabled then
         local args = {...}
         if typeof(args[2]) == "number" then
-            args[2] = 1 -- Force perfect mining
+            args[2] = 1
             return old(self, unpack(args))
         end
     end
-    
     return old(self, ...)
 end))
 
 
--- [[ 4. สร้าง UI แบบ Custom (Custom ScreenGui) ]]
-
--- ลบ UI เก่าออกหากมีอยู่แล้ว
-if CoreGui:FindFirstChild("CustomMiningHub") then
-    CoreGui.CustomMiningHub:Destroy()
+-- [[ 4. การสร้าง UI (Custom ScreenGui) ]]
+if ParentGui:FindFirstChild("CustomMiningHub") then
+    ParentGui.CustomMiningHub:Destroy()
 end
 
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "CustomMiningHub"
-ScreenGui.Parent = CoreGui
 ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = ParentGui
 
--- 4.1 ปุ่มโลโก้สี่เหลี่ยมเล็ก (Logo Toggle Button)
+-- 4.1 ปุ่มโลโก้สี่เหลี่ยมเปิด-ปิด UI (Logo Toggle Button)
 local LogoBtn = Instance.new("TextButton")
 LogoBtn.Name = "LogoBtn"
 LogoBtn.Size = UDim2.new(0, 45, 0, 45)
@@ -109,14 +102,14 @@ MainFrame.Size = UDim2.new(0, 420, 0, 280)
 MainFrame.Position = UDim2.new(0.5, -210, 0.5, -140)
 MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 MainFrame.Active = true
-MainFrame.Draggable = true -- เปิดให้ลากได้โดยเริ่มต้น
+MainFrame.Draggable = true
 MainFrame.Parent = ScreenGui
 
 local MainCorner = Instance.new("UICorner")
 MainCorner.CornerRadius = UDim.new(0, 10)
 MainCorner.Parent = MainFrame
 
--- 4.3 แถบด้านบน (Header / Title Bar)
+-- 4.3 แถบหัวข้อ + ปุ่มล็อค UI (Header)
 local Header = Instance.new("Frame")
 Header.Size = UDim2.new(1, 0, 0, 35)
 Header.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
@@ -137,10 +130,9 @@ TitleText.Font = Enum.Font.SourceSansBold
 TitleText.TextSize = 16
 TitleText.Parent = Header
 
--- ปุ่มล็อค UI (Lock Button)
 local LockBtn = Instance.new("TextButton")
-LockBtn.Size = UDim2.new(0, 60, 0, 25)
-LockBtn.Position = UDim2.new(1, -70, 0, 5)
+LockBtn.Size = UDim2.new(0, 75, 0, 25)
+LockBtn.Position = UDim2.new(1, -85, 0, 5)
 LockBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
 LockBtn.Text = "🔓 Unlock"
 LockBtn.TextColor3 = Color3.fromRGB(150, 255, 150)
@@ -152,7 +144,7 @@ local LockCorner = Instance.new("UICorner")
 LockCorner.CornerRadius = UDim.new(0, 5)
 LockCorner.Parent = LockBtn
 
--- 4.4 แถบเลือก Tab (Sidebar)
+-- 4.4 แถบแท็บด้านซ้าย (Sidebar)
 local Sidebar = Instance.new("Frame")
 Sidebar.Size = UDim2.new(0, 110, 1, -35)
 Sidebar.Position = UDim2.new(0, 0, 0, 35)
@@ -161,26 +153,36 @@ Sidebar.Parent = MainFrame
 
 local SideLayout = Instance.new("UIListLayout")
 SideLayout.Padding = UDim.new(0, 5)
+SideLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+SideLayout.SortOrder = Enum.SortOrder.LayoutOrder
 SideLayout.Parent = Sidebar
 
--- 4.5 พื้นที่แสดงเนื้อหา (Content Container)
+local SidePadding = Instance.new("UIPadding")
+SidePadding.PaddingTop = UDim.new(0, 8)
+SidePadding.Parent = Sidebar
+
+-- 4.5 พื้นที่ใส่เนื้อหาปุ่ม (Container)
 local Container = Instance.new("Frame")
-Container.Size = UDim2.new(1, -115, 1, -40)
-Container.Position = UDim2.new(0, 115, 0, 38)
+Container.Size = UDim2.new(1, -120, 1, -45)
+Container.Position = UDim2.new(0, 115, 0, 40)
 Container.BackgroundTransparency = 1
 Container.Parent = MainFrame
 
 local Pages = {}
+local TabButtons = {}
+local tabCounter = 0
 
 local function CreateTab(name)
+    tabCounter = tabCounter + 1
+    
     local TabBtn = Instance.new("TextButton")
-    TabBtn.Size = UDim2.new(1, -10, 0, 30)
-    TabBtn.Position = UDim2.new(0, 5, 0, 0)
+    TabBtn.Size = UDim2.new(0.9, 0, 0, 30)
     TabBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
     TabBtn.Text = name
-    TabBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
-    TabBtn.Font = Enum.Font.SourceSans
-    TabBtn.TextSize = 14
+    TabBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+    TabBtn.Font = Enum.Font.SourceSansBold
+    TabBtn.TextSize = 13
+    TabBtn.LayoutOrder = tabCounter
     TabBtn.Parent = Sidebar
     
     local BtnCorner = Instance.new("UICorner")
@@ -192,29 +194,47 @@ local function CreateTab(name)
     Page.BackgroundTransparency = 1
     Page.Visible = false
     Page.ScrollBarThickness = 4
+    Page.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    Page.CanvasSize = UDim2.new(0, 0, 0, 0)
     Page.Parent = Container
     
     local PageLayout = Instance.new("UIListLayout")
     PageLayout.Padding = UDim.new(0, 6)
+    PageLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    PageLayout.SortOrder = Enum.SortOrder.LayoutOrder
     PageLayout.Parent = Page
+
+    local PagePadding = Instance.new("UIPadding")
+    PagePadding.PaddingTop = UDim.new(0, 5)
+    PagePadding.PaddingBottom = UDim.new(0, 5)
+    PagePadding.Parent = Page
 
     TabBtn.MouseButton1Click:Connect(function()
         for _, p in pairs(Pages) do p.Visible = false end
+        for _, b in pairs(TabButtons) do 
+            b.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+            b.TextColor3 = Color3.fromRGB(180, 180, 180) 
+        end
         Page.Visible = true
+        TabBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 90)
+        TabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     end)
 
-    Pages[name] = Page
-    return Page
+    table.insert(Pages, Page)
+    table.insert(TabButtons, TabBtn)
+    return Page, TabBtn
 end
 
-local AutoPage = CreateTab("Automation")
+local AutoPage, AutoBtn = CreateTab("Automation")
 local VisPage = CreateTab("Visuals")
 local TelePage = CreateTab("Teleports")
 local MiscPage = CreateTab("Misc")
-AutoPage.Visible = true -- เปิดแท็บแรกไว้เริ่มต้น
 
--- 4.6 ตัวสร้างปุ่มกด / สวิตช์ (UI Elements Helper Functions)
+-- 4.6 ตัวสร้างปุ่มและสวิตช์เปิด-ปิด
+local elementOrder = 0
+
 local function CreateButton(parent, text, callback)
+    elementOrder = elementOrder + 1
     local Btn = Instance.new("TextButton")
     Btn.Size = UDim2.new(0.95, 0, 0, 32)
     Btn.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
@@ -222,6 +242,7 @@ local function CreateButton(parent, text, callback)
     Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
     Btn.Font = Enum.Font.SourceSansMedium
     Btn.TextSize = 14
+    Btn.LayoutOrder = elementOrder
     Btn.Parent = parent
 
     local Corner = Instance.new("UICorner")
@@ -232,6 +253,7 @@ local function CreateButton(parent, text, callback)
 end
 
 local function CreateToggle(parent, text, default, callback)
+    elementOrder = elementOrder + 1
     local Toggle = Instance.new("TextButton")
     Toggle.Size = UDim2.new(0.95, 0, 0, 32)
     Toggle.BackgroundColor3 = default and Color3.fromRGB(0, 150, 90) or Color3.fromRGB(45, 45, 60)
@@ -239,6 +261,7 @@ local function CreateToggle(parent, text, default, callback)
     Toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
     Toggle.Font = Enum.Font.SourceSansMedium
     Toggle.TextSize = 14
+    Toggle.LayoutOrder = elementOrder
     Toggle.Parent = parent
 
     local state = default
@@ -255,18 +278,17 @@ local function CreateToggle(parent, text, default, callback)
 end
 
 
--- [[ 5. เชื่อมต่อระบบปุ่มกด UI กับฟังก์ชันต่างๆ ]]
+-- [[ 5. ผูกฟังก์ชันการทำงานลงใน UI ]]
 
--- 5.1 สลับ เปิด/พับ UI ด้วยปุ่มโลโก้
+-- เปิด-ปิด พับเก็บ UI ด้วยปุ่มโลโก้สี่เหลี่ยม
 LogoBtn.MouseButton1Click:Connect(function()
     MainFrame.Visible = not MainFrame.Visible
 end)
 
--- 5.2 ระบบ ล็อค / ปลดล็อค UI
+-- ล็อค-ปลดล็อคการลาก UI
 LockBtn.MouseButton1Click:Connect(function()
     UILocked = not UILocked
     MainFrame.Draggable = not UILocked
-    
     if UILocked then
         LockBtn.Text = "🔒 Locked"
         LockBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
@@ -276,7 +298,7 @@ LockBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- 5.3 ใส่ปุ่มในแท็บ Automation
+-- 5.1 แท็บ Automation
 CreateToggle(AutoPage, "Always Perfect Mine", false, function(val)
     AlwaysPerfectEnabled = val
 end)
@@ -303,7 +325,7 @@ CreateButton(AutoPage, "Blast Hole (Original)", function()
     ExecuteOriginalBlast()
 end)
 
--- 5.4 ใส่ปุ่มในแท็บ Visuals
+-- 5.2 แท็บ Visuals
 CreateToggle(VisPage, "Ores ESP", false, function(val)
     OresESPEnabled = val
     if OresESPEnabled then
@@ -342,12 +364,12 @@ CreateToggle(VisPage, "Ores ESP", false, function(val)
     end
 end)
 
--- 5.5 ใส่ปุ่มในแท็บ Teleports
+-- 5.3 แท็บ Teleports
 CreateButton(TelePage, "Main Spawn", function() tp(CFrame.new(1007, 245, -65)) end)
 CreateButton(TelePage, "First Area", function() tp(CFrame.new(1018, 181, -1456)) end)
 CreateButton(TelePage, "Snow Area", function() tp(CFrame.new(1011, 177, -2906)) end)
 
--- 5.6 ใส่ปุ่มในแท็บ Misc
+-- 5.4 แท็บ Misc
 CreateButton(MiscPage, "Enable Anti-AFK", function()
     local bb = game:GetService("VirtualUser")
     LocalPlayer.Idled:Connect(function()
@@ -355,3 +377,8 @@ CreateButton(MiscPage, "Enable Anti-AFK", function()
         bb:ClickButton2(Vector2.new())
     end)
 end)
+
+-- เปิดแท็บแรกอัตโนมัติเมื่อรันสคริปต์
+AutoPage.Visible = true
+AutoBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 90)
+AutoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
