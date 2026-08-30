@@ -2,20 +2,15 @@
 local AutoCollectEnabled = false
 local OresESPEnabled = false
 local AlwaysPerfectEnabled = false
+local UILocked = false -- สถานะการล็อค UI
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CoreGui = game:GetService("CoreGui")
+local LocalPlayer = Players.LocalPlayer
+
 local MiningRemote = ReplicatedStorage:WaitForChild("shared/network/MiningNetwork@GlobalMiningEvents"):WaitForChild("Mine")
 local CollectRemote = ReplicatedStorage:WaitForChild("shared/network/MiningNetwork@GlobalMiningEvents"):WaitForChild("CollectItem")
-
--- โหลด Ourrodos UI Library
-local Ourrodos = loadstring(game:HttpGet("https://raw.githubusercontent.com/Ourrodos/UI-Library/main/source.lua"))()
-
--- สร้างหน้าต่างหลัก (Window)
-local Window = Ourrodos:CreateWindow({
-    Title = "Mining Utility Hub | Solo Development",
-    Subtitle = "Configuration Loaded",
-    Theme = "Default"
-})
 
 
 -- [[ 2. ฟังก์ชันการทำงานหลัก (Functions) ]]
@@ -27,7 +22,7 @@ end
 
 -- 2. ฟังก์ชันเทเลพอร์ต (Teleport)
 local function tp(pos)
-    local root = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if root then 
         root.CFrame = pos 
     end
@@ -35,7 +30,7 @@ end
 
 -- 3. ฟังก์ชันขุดเจาะรูอัตโนมัติ (Execute Original Blast)
 local function ExecuteOriginalBlast()
-    local Root = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local Root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not Root then return end
     
     local startPos = Root.Position
@@ -79,135 +74,284 @@ old = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
 end))
 
 
--- [[ 4. การสร้างแท็บและเมนู UI (Ourrodos UI Structure) ]]
+-- [[ 4. สร้าง UI แบบ Custom (Custom ScreenGui) ]]
 
--- สร้างแท็บ (Tabs)
-local MainTab = Window:CreateTab("Automation")
-local VisualsTab = Window:CreateTab("Visuals")
-local TeleportTab = Window:CreateTab("Teleports")
-local MiscTab = Window:CreateTab("Misc")
+-- ลบ UI เก่าออกหากมีอยู่แล้ว
+if CoreGui:FindFirstChild("CustomMiningHub") then
+    CoreGui.CustomMiningHub:Destroy()
+end
 
--- 4.1 แท็บ Automation (Mining)
-MainTab:CreateSection("Mining Features")
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "CustomMiningHub"
+ScreenGui.Parent = CoreGui
+ScreenGui.ResetOnSpawn = false
 
-MainTab:CreateToggle({
-    Name = "Always Perfect Mine",
-    Default = false,
-    Callback = function(Value)
-        AlwaysPerfectEnabled = Value
+-- 4.1 ปุ่มโลโก้สี่เหลี่ยมเล็ก (Logo Toggle Button)
+local LogoBtn = Instance.new("TextButton")
+LogoBtn.Name = "LogoBtn"
+LogoBtn.Size = UDim2.new(0, 45, 0, 45)
+LogoBtn.Position = UDim2.new(0, 15, 0, 15)
+LogoBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+LogoBtn.TextColor3 = Color3.fromRGB(0, 255, 180)
+LogoBtn.Text = "⛏️"
+LogoBtn.TextSize = 22
+LogoBtn.Font = Enum.Font.SourceSansBold
+LogoBtn.Parent = ScreenGui
+
+local LogoCorner = Instance.new("UICorner")
+LogoCorner.CornerRadius = UDim.new(0, 8)
+LogoCorner.Parent = LogoBtn
+
+-- 4.2 หน้าต่างหลัก (Main Window Frame)
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 420, 0, 280)
+MainFrame.Position = UDim2.new(0.5, -210, 0.5, -140)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+MainFrame.Active = true
+MainFrame.Draggable = true -- เปิดให้ลากได้โดยเริ่มต้น
+MainFrame.Parent = ScreenGui
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 10)
+MainCorner.Parent = MainFrame
+
+-- 4.3 แถบด้านบน (Header / Title Bar)
+local Header = Instance.new("Frame")
+Header.Size = UDim2.new(1, 0, 0, 35)
+Header.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+Header.Parent = MainFrame
+
+local HeaderCorner = Instance.new("UICorner")
+HeaderCorner.CornerRadius = UDim.new(0, 10)
+HeaderCorner.Parent = Header
+
+local TitleText = Instance.new("TextLabel")
+TitleText.Size = UDim2.new(0.6, 0, 1, 0)
+TitleText.Position = UDim2.new(0, 12, 0, 0)
+TitleText.BackgroundTransparency = 1
+TitleText.Text = "Mining Utility Hub"
+TitleText.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleText.TextXAlignment = Enum.TextXAlignment.Left
+TitleText.Font = Enum.Font.SourceSansBold
+TitleText.TextSize = 16
+TitleText.Parent = Header
+
+-- ปุ่มล็อค UI (Lock Button)
+local LockBtn = Instance.new("TextButton")
+LockBtn.Size = UDim2.new(0, 60, 0, 25)
+LockBtn.Position = UDim2.new(1, -70, 0, 5)
+LockBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+LockBtn.Text = "🔓 Unlock"
+LockBtn.TextColor3 = Color3.fromRGB(150, 255, 150)
+LockBtn.Font = Enum.Font.SourceSans
+LockBtn.TextSize = 12
+LockBtn.Parent = Header
+
+local LockCorner = Instance.new("UICorner")
+LockCorner.CornerRadius = UDim.new(0, 5)
+LockCorner.Parent = LockBtn
+
+-- 4.4 แถบเลือก Tab (Sidebar)
+local Sidebar = Instance.new("Frame")
+Sidebar.Size = UDim2.new(0, 110, 1, -35)
+Sidebar.Position = UDim2.new(0, 0, 0, 35)
+Sidebar.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
+Sidebar.Parent = MainFrame
+
+local SideLayout = Instance.new("UIListLayout")
+SideLayout.Padding = UDim.new(0, 5)
+SideLayout.Parent = Sidebar
+
+-- 4.5 พื้นที่แสดงเนื้อหา (Content Container)
+local Container = Instance.new("Frame")
+Container.Size = UDim2.new(1, -115, 1, -40)
+Container.Position = UDim2.new(0, 115, 0, 38)
+Container.BackgroundTransparency = 1
+Container.Parent = MainFrame
+
+local Pages = {}
+
+local function CreateTab(name)
+    local TabBtn = Instance.new("TextButton")
+    TabBtn.Size = UDim2.new(1, -10, 0, 30)
+    TabBtn.Position = UDim2.new(0, 5, 0, 0)
+    TabBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    TabBtn.Text = name
+    TabBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+    TabBtn.Font = Enum.Font.SourceSans
+    TabBtn.TextSize = 14
+    TabBtn.Parent = Sidebar
+    
+    local BtnCorner = Instance.new("UICorner")
+    BtnCorner.CornerRadius = UDim.new(0, 5)
+    BtnCorner.Parent = TabBtn
+
+    local Page = Instance.new("ScrollingFrame")
+    Page.Size = UDim2.new(1, 0, 1, 0)
+    Page.BackgroundTransparency = 1
+    Page.Visible = false
+    Page.ScrollBarThickness = 4
+    Page.Parent = Container
+    
+    local PageLayout = Instance.new("UIListLayout")
+    PageLayout.Padding = UDim.new(0, 6)
+    PageLayout.Parent = Page
+
+    TabBtn.MouseButton1Click:Connect(function()
+        for _, p in pairs(Pages) do p.Visible = false end
+        Page.Visible = true
+    end)
+
+    Pages[name] = Page
+    return Page
+end
+
+local AutoPage = CreateTab("Automation")
+local VisPage = CreateTab("Visuals")
+local TelePage = CreateTab("Teleports")
+local MiscPage = CreateTab("Misc")
+AutoPage.Visible = true -- เปิดแท็บแรกไว้เริ่มต้น
+
+-- 4.6 ตัวสร้างปุ่มกด / สวิตช์ (UI Elements Helper Functions)
+local function CreateButton(parent, text, callback)
+    local Btn = Instance.new("TextButton")
+    Btn.Size = UDim2.new(0.95, 0, 0, 32)
+    Btn.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
+    Btn.Text = text
+    Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Btn.Font = Enum.Font.SourceSansMedium
+    Btn.TextSize = 14
+    Btn.Parent = parent
+
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, 6)
+    Corner.Parent = Btn
+
+    Btn.MouseButton1Click:Connect(callback)
+end
+
+local function CreateToggle(parent, text, default, callback)
+    local Toggle = Instance.new("TextButton")
+    Toggle.Size = UDim2.new(0.95, 0, 0, 32)
+    Toggle.BackgroundColor3 = default and Color3.fromRGB(0, 150, 90) or Color3.fromRGB(45, 45, 60)
+    Toggle.Text = text .. (default and " : [ON]" or " : [OFF]")
+    Toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Toggle.Font = Enum.Font.SourceSansMedium
+    Toggle.TextSize = 14
+    Toggle.Parent = parent
+
+    local state = default
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, 6)
+    Corner.Parent = Toggle
+
+    Toggle.MouseButton1Click:Connect(function()
+        state = not state
+        Toggle.BackgroundColor3 = state and Color3.fromRGB(0, 150, 90) or Color3.fromRGB(45, 45, 60)
+        Toggle.Text = text .. (state and " : [ON]" or " : [OFF]")
+        callback(state)
+    end)
+end
+
+
+-- [[ 5. เชื่อมต่อระบบปุ่มกด UI กับฟังก์ชันต่างๆ ]]
+
+-- 5.1 สลับ เปิด/พับ UI ด้วยปุ่มโลโก้
+LogoBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
+end)
+
+-- 5.2 ระบบ ล็อค / ปลดล็อค UI
+LockBtn.MouseButton1Click:Connect(function()
+    UILocked = not UILocked
+    MainFrame.Draggable = not UILocked
+    
+    if UILocked then
+        LockBtn.Text = "🔒 Locked"
+        LockBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+    else
+        LockBtn.Text = "🔓 Unlock"
+        LockBtn.TextColor3 = Color3.fromRGB(150, 255, 150)
     end
-})
+end)
 
-MainTab:CreateToggle({
-    Name = "Auto Collect Ores (Remote)",
-    Default = false,
-    Callback = function(Value)
-        AutoCollectEnabled = Value
-        if AutoCollectEnabled then
-            task.spawn(function()
-                while AutoCollectEnabled do
-                    local itemsFolder = GetItemsFolder()
-                    if itemsFolder then
-                        for _, item in pairs(itemsFolder:GetChildren()) do
-                            if not AutoCollectEnabled then break end
-                            CollectRemote:FireServer(item.Name)
+-- 5.3 ใส่ปุ่มในแท็บ Automation
+CreateToggle(AutoPage, "Always Perfect Mine", false, function(val)
+    AlwaysPerfectEnabled = val
+end)
+
+CreateToggle(AutoPage, "Auto Collect Ores", false, function(val)
+    AutoCollectEnabled = val
+    if AutoCollectEnabled then
+        task.spawn(function()
+            while AutoCollectEnabled do
+                local itemsFolder = GetItemsFolder()
+                if itemsFolder then
+                    for _, item in pairs(itemsFolder:GetChildren()) do
+                        if not AutoCollectEnabled then break end
+                        CollectRemote:FireServer(item.Name)
+                    end
+                end
+                task.wait(0.5)
+            end
+        end)
+    end
+end)
+
+CreateButton(AutoPage, "Blast Hole (Original)", function()
+    ExecuteOriginalBlast()
+end)
+
+-- 5.4 ใส่ปุ่มในแท็บ Visuals
+CreateToggle(VisPage, "Ores ESP", false, function(val)
+    OresESPEnabled = val
+    if OresESPEnabled then
+        task.spawn(function()
+            while OresESPEnabled do
+                local itemsFolder = GetItemsFolder()
+                if itemsFolder then
+                    for _, item in pairs(itemsFolder:GetChildren()) do
+                        local targetPart = item:IsA("BasePart") and item or (item:IsA("Model") and item.PrimaryPart)
+                        
+                        if targetPart and not item:FindFirstChild("OreESP") then
+                            local box = Instance.new("BoxHandleAdornment")
+                            box.Name = "OreESP"
+                            box.Adornee = targetPart
+                            box.AlwaysOnTop = true
+                            box.Size = item:IsA("Model") and item:GetExtentsSize() or targetPart.Size
+                            box.ZIndex = 1
+                            box.Transparency = 0.5
+                            box.Color3 = targetPart.Color
+                            box.Parent = item
                         end
                     end
-                    task.wait(0.5)
                 end
-            end)
-        end
-    end
-})
-
-MainTab:CreateButton({
-    Name = "Blast Hole (Original)",
-    Callback = function()
-        Ourrodos:Notify({Title = "Blasting", Content = "Creating hole beneath you...", Duration = 2})
-        ExecuteOriginalBlast()
-    end
-})
-
--- 4.2 แท็บ Visuals (ESP)
-VisualsTab:CreateSection("ESP")
-
-VisualsTab:CreateToggle({
-    Name = "Ores ESP",
-    Default = false,
-    Callback = function(Value)
-        OresESPEnabled = Value
-        if OresESPEnabled then
-            task.spawn(function()
-                while OresESPEnabled do
-                    local itemsFolder = GetItemsFolder()
-                    if itemsFolder then
-                        for _, item in pairs(itemsFolder:GetChildren()) do
-                            local targetPart = item:IsA("BasePart") and item or (item:IsA("Model") and item.PrimaryPart)
-                            
-                            if targetPart and not item:FindFirstChild("OreESP") then
-                                local box = Instance.new("BoxHandleAdornment")
-                                box.Name = "OreESP"
-                                box.Adornee = targetPart
-                                box.AlwaysOnTop = true
-                                box.Size = item:IsA("Model") and item:GetExtentsSize() or targetPart.Size
-                                box.ZIndex = 1
-                                box.Transparency = 0.5
-                                box.Color3 = targetPart.Color
-                                box.Parent = item
-                            end
-                        end
-                    end
-                    task.wait(1)
-                end
-            end)
-        else
-            local itemsFolder = GetItemsFolder()
-            if itemsFolder then
-                for _, item in pairs(itemsFolder:GetDescendants()) do
-                    if item.Name == "OreESP" then 
-                        item:Destroy() 
-                    end
+                task.wait(1)
+            end
+        end)
+    else
+        local itemsFolder = GetItemsFolder()
+        if itemsFolder then
+            for _, item in pairs(itemsFolder:GetDescendants()) do
+                if item.Name == "OreESP" then 
+                    item:Destroy() 
                 end
             end
         end
     end
-})
+end)
 
--- 4.3 แท็บ Teleports
-TeleportTab:CreateSection("World Locations")
+-- 5.5 ใส่ปุ่มในแท็บ Teleports
+CreateButton(TelePage, "Main Spawn", function() tp(CFrame.new(1007, 245, -65)) end)
+CreateButton(TelePage, "First Area", function() tp(CFrame.new(1018, 181, -1456)) end)
+CreateButton(TelePage, "Snow Area", function() tp(CFrame.new(1011, 177, -2906)) end)
 
-TeleportTab:CreateButton({
-    Name = "Main Spawn",
-    Callback = function() 
-        tp(CFrame.new(1007, 245, -65)) 
-    end
-})
-
-TeleportTab:CreateButton({
-    Name = "First Area",
-    Callback = function() 
-        tp(CFrame.new(1018, 181, -1456)) 
-    end
-})
-
-TeleportTab:CreateButton({
-    Name = "Snow Area",
-    Callback = function() 
-        tp(CFrame.new(1011, 177, -2906)) 
-    end
-})
-
--- 4.4 แท็บ Misc (Utilities)
-MiscTab:CreateSection("Utilities")
-
-MiscTab:CreateButton({
-    Name = "Enable Anti-AFK",
-    Callback = function()
-        local bb = game:GetService("VirtualUser")
-        game.Players.LocalPlayer.Idled:Connect(function()
-            bb:CaptureController()
-            bb:ClickButton2(Vector2.new())
-        end)
-        Ourrodos:Notify({Title = "Anti-AFK", Content = "Anti-AFK is now active.", Duration = 3})
-    end
-})
+-- 5.6 ใส่ปุ่มในแท็บ Misc
+CreateButton(MiscPage, "Enable Anti-AFK", function()
+    local bb = game:GetService("VirtualUser")
+    LocalPlayer.Idled:Connect(function()
+        bb:CaptureController()
+        bb:ClickButton2(Vector2.new())
+    end)
+end)
