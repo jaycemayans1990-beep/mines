@@ -9,7 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
--- รองรับ Executor ทุกค่าย (gethui fallback)
+-- ดึง Parent Gui ที่รองรับ Executor ทุกค่าย
 local ParentGui = (gethui and gethui()) or CoreGui or LocalPlayer:WaitForChild("PlayerGui")
 
 local MiningRemote = ReplicatedStorage:WaitForChild("shared/network/MiningNetwork@GlobalMiningEvents"):WaitForChild("Mine")
@@ -79,7 +79,7 @@ ScreenGui.Name = "CustomMiningHub"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = ParentGui
 
--- 4.1 ปุ่มโลโก้สี่เหลี่ยมเปิด-ปิด UI (Logo Toggle Button)
+-- 4.1 ปุ่มโลโก้สี่เหลี่ยมเปิด-ปิด UI
 local LogoBtn = Instance.new("TextButton")
 LogoBtn.Name = "LogoBtn"
 LogoBtn.Size = UDim2.new(0, 45, 0, 45)
@@ -95,7 +95,7 @@ local LogoCorner = Instance.new("UICorner")
 LogoCorner.CornerRadius = UDim.new(0, 8)
 LogoCorner.Parent = LogoBtn
 
--- 4.2 หน้าต่างหลัก (Main Window Frame)
+-- 4.2 หน้าต่างหลัก
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.new(0, 420, 0, 280)
@@ -109,7 +109,7 @@ local MainCorner = Instance.new("UICorner")
 MainCorner.CornerRadius = UDim.new(0, 10)
 MainCorner.Parent = MainFrame
 
--- 4.3 แถบหัวข้อ + ปุ่มล็อค UI (Header)
+-- 4.3 แถบหัวข้อ + ปุ่มล็อค UI
 local Header = Instance.new("Frame")
 Header.Size = UDim2.new(1, 0, 0, 35)
 Header.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
@@ -161,7 +161,7 @@ local SidePadding = Instance.new("UIPadding")
 SidePadding.PaddingTop = UDim.new(0, 8)
 SidePadding.Parent = Sidebar
 
--- 4.5 พื้นที่ใส่เนื้อหาปุ่ม (Container)
+-- 4.5 พื้นที่แสดงเนื้อหาปุ่ม (Container)
 local Container = Instance.new("Frame")
 Container.Size = UDim2.new(1, -120, 1, -45)
 Container.Position = UDim2.new(0, 115, 0, 40)
@@ -194,7 +194,6 @@ local function CreateTab(name)
     Page.BackgroundTransparency = 1
     Page.Visible = false
     Page.ScrollBarThickness = 4
-    Page.AutomaticCanvasSize = Enum.AutomaticSize.Y
     Page.CanvasSize = UDim2.new(0, 0, 0, 0)
     Page.Parent = Container
     
@@ -203,6 +202,11 @@ local function CreateTab(name)
     PageLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     PageLayout.SortOrder = Enum.SortOrder.LayoutOrder
     PageLayout.Parent = Page
+
+    -- บังคับอัปเดต CanvasSize อัตโนมัติ แก้ปัญหาปุ่มล่องหนบนมือถือ
+    PageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        Page.CanvasSize = UDim2.new(0, 0, 0, PageLayout.AbsoluteContentSize.Y + 20)
+    end)
 
     local PagePadding = Instance.new("UIPadding")
     PagePadding.PaddingTop = UDim.new(0, 5)
@@ -236,7 +240,7 @@ local elementOrder = 0
 local function CreateButton(parent, text, callback)
     elementOrder = elementOrder + 1
     local Btn = Instance.new("TextButton")
-    Btn.Size = UDim2.new(0.95, 0, 0, 32)
+    Btn.Size = UDim2.new(0.95, 0, 0, 34)
     Btn.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
     Btn.Text = text
     Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -255,7 +259,7 @@ end
 local function CreateToggle(parent, text, default, callback)
     elementOrder = elementOrder + 1
     local Toggle = Instance.new("TextButton")
-    Toggle.Size = UDim2.new(0.95, 0, 0, 32)
+    Toggle.Size = UDim2.new(0.95, 0, 0, 34)
     Toggle.BackgroundColor3 = default and Color3.fromRGB(0, 150, 90) or Color3.fromRGB(45, 45, 60)
     Toggle.Text = text .. (default and " : [ON]" or " : [OFF]")
     Toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -378,7 +382,7 @@ CreateButton(MiscPage, "Enable Anti-AFK", function()
     end)
 end)
 
--- เปิดแท็บแรกอัตโนมัติเมื่อรันสคริปต์
+-- เปิดใช้งานแท็บแรกทันที
 AutoPage.Visible = true
 AutoBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 90)
 AutoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
