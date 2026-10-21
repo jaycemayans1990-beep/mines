@@ -1,3 +1,5 @@
+-- Mines.txt — fixed & optimized: event-driven ESP/collect, non-blocking UI, guarded hook, no notifications
+
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
@@ -10,72 +12,175 @@ local Window = Rayfield:CreateWindow({
       FileName = "SoloConfig"
    },
    KeySystem = false,
-   Theme = "Ocean" 
+   Theme = "Ocean",
+   LoadingEnabled = false
 })
 
--- [[ VARIABLES ]]
-local AutoCollectEnabled = false
-local OresESPEnabled = false
-local AlwaysPerfectEnabled = false
-
+-- [[ SERVICES ]]
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local MiningRemote = ReplicatedStorage:WaitForChild("shared/network/MiningNetwork@GlobalMiningEvents"):WaitForChild("Mine")
-local CollectRemote = ReplicatedStorage:WaitForChild("shared/network/MiningNetwork@GlobalMiningEvents"):WaitForChild("CollectItem")
+local VirtualUser = game:GetService("VirtualUser")
+local LocalPlayer = Players.LocalPlayer
 
--- Dynamic Item Folder Resolver
+-- [[ REMOTES ]] -- timeout กันค้างตอนโหลดช้า
+local MiningEvents = ReplicatedStorage:WaitForChild("shared/network/MiningNetwork@GlobalMiningEvents", 15)
+if not MiningEvents then
+   warn("[Mines] MiningNetwork remotes not found — remote names may have changed")
+   return
+end
+local MiningRemote = MiningEvents:WaitForChild("Mine", 15)
+local CollectRemote = MiningEvents:WaitForChild("CollectItem", 15)
+
+-- [[ CONFIG ]]
+local BLAST = { Width = 6, Depth = 20, Step = 5, Delay = 0.1 }
+local COLLECT_SPAWN_DELAY = 0.2 -- รอให้ item init บน server ก่อนขอเก็บ
+
+-- [[ STATE ]]
+local State = { Perfect = false, Collect = false, ESP = false }
+local AntiAFKConn = nil
+local Blasting = false
+local itemsFolderCache = nil
+local espConns = {}
+local collectConns = {}
+
+-- [[ HELPERS ]]
+local unpack = table.unpack or unpack
+
+local function GetRoot()
+   local char = LocalPlayer.Character
+   return char and char:FindFirstChild("HumanoidRootPart")
+end
+
 local function GetItemsFolder()
-    return workspace:FindFirstChild("Items")
+   if itemsFolderCache and itemsFolderCache.Parent then
+      return itemsFolderCache
+   end
+   itemsFolderCache = workspace:FindFirstChild("Items")
+   return itemsFolderCache
 end
 
--- [[ HOOKS ]]
-local old
-old = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-    local method = getnamecallmethod()
-    
-    if not checkcaller() and self == MiningRemote and method == "FireServer" and AlwaysPerfectEnabled then
-        local args = {...}
-        if typeof(args[2]) == "number" then
-            args[2] = 1 -- Force perfect mining
-            return old(self, unpack(args))
-        end
-    end
-    
-    return old(self, ...)
-end))
+local function SafeFire(remote, ...)
+   local ok, err = pcall(remote.FireServer, remote, ...)
+   if not ok then warn("[Mines] FireServer failed:", err) end
+end
 
--- [[ FUNCTIONS ]]
-local function ExecuteOriginalBlast()
-    local Root = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not Root then return end
-    
-    local startPos = Root.Position
-    local holeWidth = 6
-    local holeDepth = 20
-    local step = 5     
+local function Teleport(cf)
+   local char = LocalPlayer.Character
+   if char then char:PivotTo(cf) end -- PivotTo ย้ายทั้งโมเดล เนียนกว่าแกะ root เดี่ยว
+end
 
-    for x = -holeWidth, holeWidth, step do
-        for z = -holeWidth, holeWidth, step do
-            for y = 1, holeDepth, step do
-                local targetVector = Vector3.new(
-                    startPos.X + x,
-                    startPos.Y - y, 
-                    startPos.Z + z
-                )
-                
-                task.spawn(function()
-                    MiningRemote:FireServer(targetVector, 1)
-                end)
+-- [[ HOOK — Always Perfect ]] -- guarded: ถ้า executor ไม่รองรับจะไม่พังทั้งไฟล์
+local HookReady = false
+if hookmetamethod and newcclosure and getnamecallmethod and checkcaller then
+   local ok = pcall(function()
+      local old
+      old = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+         if State.Perfect and not checkcaller() and self == MiningRemote and getnamecallmethod() == "FireServer" then
+            local args = { ... }
+            if typeof(args[2]) == "number" then
+               args[2] = 1
+               return old(self, unpack(args))
             end
-        end
-        task.wait(0.1) 
-    end
+         end
+         return old(self, ...)
+      end))
+      return ok ~= nil
+   end)
+   HookReady = ok or false
+end
+if not HookReady then
+   warn("[Mines] hookmetamethod unavailable — Always Perfect disabled")
 end
 
-local function tp(pos)
-    local root = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if root then 
-        root.CFrame = pos 
-    end
+-- [[ BLAST ]] -- ลูปเดียว ไม่ spawn thread ต่อ target, จังหวะยิงเท่าเดิม
+local function ExecuteBlast()
+   if Blasting then return end
+   local root = GetRoot()
+   if not root then return end
+   Blasting = true
+
+   local pos = root.Position
+   for x = -BLAST.Width, BLAST.Width, BLAST.Step do
+      for z = -BLAST.Width, BLAST.Width, BLAST.Step do
+         for y = 1, BLAST.Depth, BLAST.Step do
+            SafeFire(MiningRemote, Vector3.new(pos.X + x, pos.Y - y, pos.Z + z), 1)
+            task.wait(BLAST.Delay)
+         end
+      end
+   end
+   Blasting = false
+end
+
+-- [[ ESP — event-driven ]] -- ไม่มี polling loop, CPU = 0 ตอน idle
+local function AttachESP(item)
+   if not State.ESP or item:FindFirstChild("OreESP") then return end
+   local part
+   if item:IsA("BasePart") then
+      part = item
+   elseif item:IsA("Model") then
+      part = item.PrimaryPart or item:FindFirstChildWhichIsA("BasePart") -- เดิม: ไม่มี PrimaryPart = ไม่มีกล่อง
+   end
+   if not part then return end
+
+   local box = Instance.new("BoxHandleAdornment")
+   box.Name = "OreESP"
+   box.Adornee = part
+   box.AlwaysOnTop = true
+   box.Size = item:IsA("Model") and item:GetExtentsSize() or part.Size
+   box.ZIndex = 1
+   box.Transparency = 0.5
+   box.Color3 = part.Color
+   box.Parent = item
+end
+
+local function ClearESP()
+   for _, c in ipairs(espConns) do c:Disconnect() end
+   table.clear(espConns)
+   local folder = GetItemsFolder()
+   if folder then
+      for _, d in ipairs(folder:GetDescendants()) do
+         if d.Name == "OreESP" then d:Destroy() end
+      end
+   end
+end
+
+local function StartESP()
+   local folder = GetItemsFolder()
+   if not folder then return end
+   for _, item in ipairs(folder:GetChildren()) do
+      AttachESP(item)
+   end
+   table.insert(espConns, folder.ChildAdded:Connect(function(item)
+      task.defer(AttachESP, item)
+   end))
+end
+
+-- [[ AUTO COLLECT — event-driven ]]
+local function CollectAll()
+   local folder = GetItemsFolder()
+   if not folder then return end
+   for _, item in ipairs(folder:GetChildren()) do
+      SafeFire(CollectRemote, item.Name)
+   end
+end
+
+local function StartCollect()
+   CollectAll() -- เก็บของที่มีอยู่แล้วก่อนรอบเดียว
+   local folder = GetItemsFolder()
+   if not folder then return end
+   table.insert(collectConns, folder.ChildAdded:Connect(function(item)
+      if not State.Collect then return end
+      task.delay(COLLECT_SPAWN_DELAY, function()
+         if State.Collect and item.Parent then
+            SafeFire(CollectRemote, item.Name)
+         end
+      end)
+   end))
+end
+
+local function StopCollect()
+   for _, c in ipairs(collectConns) do c:Disconnect() end
+   table.clear(collectConns)
 end
 
 -- [[ TABS ]]
@@ -84,49 +189,36 @@ local VisualsTab = Window:CreateTab("Visuals", 4483362458)
 local TeleportTab = Window:CreateTab("Teleports", 4483362458)
 local MiscTab = Window:CreateTab("Misc", 4483362458)
 
--- [[ MINING SECTION ]]
+-- [[ MINING ]]
 MainTab:CreateSection("Mining Features")
-MainTab:CreateToggle({
-   Name = "Always Perfect Mine",
-   CurrentValue = false,
-   Flag = "AlwaysPerfect",
-   Callback = function(Value)
-      AlwaysPerfectEnabled = Value
-   end,
-})
+
+if HookReady then -- สร้าง toggle เฉพาะเมื่อ hook ใช้ได้จริง
+   MainTab:CreateToggle({
+      Name = "Always Perfect Mine",
+      CurrentValue = false,
+      Flag = "AlwaysPerfect",
+      Callback = function(Value) State.Perfect = Value end,
+   })
+end
 
 MainTab:CreateToggle({
    Name = "Auto Collect Ores (Remote)",
    CurrentValue = false,
    Flag = "AutoCollect",
    Callback = function(Value)
-      AutoCollectEnabled = Value
-      if AutoCollectEnabled then
-         task.spawn(function()
-            while AutoCollectEnabled do
-               local itemsFolder = GetItemsFolder()
-               if itemsFolder then
-                  for _, item in pairs(itemsFolder:GetChildren()) do
-                     if not AutoCollectEnabled then break end
-                     CollectRemote:FireServer(item.Name)
-                  end
-               end
-               task.wait(0.5)
-            end
-         end)
-      end
+      State.Collect = Value
+      if Value then StartCollect() else StopCollect() end
    end,
 })
 
 MainTab:CreateButton({
-   Name = "Blast Hole (Original)",
+   Name = "Blast Hole",
    Callback = function()
-      Rayfield:Notify({Title = "Blasting", Content = "Creating hole beneath you...", Duration = 2})
-      ExecuteOriginalBlast()
+      task.spawn(ExecuteBlast) -- ไม่บล็อก UI
    end,
 })
 
--- [[ VISUALS SECTION ]]
+-- [[ VISUALS ]]
 VisualsTab:CreateSection("ESP")
 
 VisualsTab:CreateToggle({
@@ -134,60 +226,35 @@ VisualsTab:CreateToggle({
    CurrentValue = false,
    Flag = "OreESP",
    Callback = function(Value)
-      OresESPEnabled = Value
-      if OresESPEnabled then
-         task.spawn(function()
-            while OresESPEnabled do
-               local itemsFolder = GetItemsFolder()
-               if itemsFolder then
-                  for _, item in pairs(itemsFolder:GetChildren()) do
-                     local targetPart = item:IsA("BasePart") and item or (item:IsA("Model") and item.PrimaryPart)
-                     
-                     if targetPart and not item:FindFirstChild("OreESP") then
-                        local box = Instance.new("BoxHandleAdornment")
-                        box.Name = "OreESP"
-                        box.Adornee = targetPart
-                        box.AlwaysOnTop = true
-                        box.Size = item:IsA("Model") and item:GetExtentsSize() or targetPart.Size
-                        box.ZIndex = 1
-                        box.Transparency = 0.5
-                        box.Color3 = targetPart.Color
-                        box.Parent = item
-                     end
-                  end
-               end
-               task.wait(1)
-            end
-         end)
-      else
-         local itemsFolder = GetItemsFolder()
-         if itemsFolder then
-            for _, item in pairs(itemsFolder:GetDescendants()) do
-               if item.Name == "OreESP" then 
-                  item:Destroy() 
-               end
-            end
-         end
-      end
+      State.ESP = Value
+      if Value then StartESP() else ClearESP() end
    end,
 })
 
--- [[ TELEPORT SECTION ]]
+-- [[ TELEPORTS ]]
 TeleportTab:CreateSection("World Locations")
-TeleportTab:CreateButton({Name = "Main Spawn", Callback = function() tp(CFrame.new(1007, 245, -65)) end})
-TeleportTab:CreateButton({Name = "First Area", Callback = function() tp(CFrame.new(1018, 181, -1456)) end})
-TeleportTab:CreateButton({Name = "Snow Area", Callback = function() tp(CFrame.new(1011, 177, -2906)) end})
+TeleportTab:CreateButton({ Name = "Main Spawn", Callback = function() Teleport(CFrame.new(1007, 245, -65)) end })
+TeleportTab:CreateButton({ Name = "First Area",  Callback = function() Teleport(CFrame.new(1018, 181, -1456)) end })
+TeleportTab:CreateButton({ Name = "Snow Area",   Callback = function() Teleport(CFrame.new(1011, 177, -2906)) end })
 
--- [[ MISC SECTION ]]
+-- [[ MISC ]]
 MiscTab:CreateSection("Utilities")
-MiscTab:CreateButton({
-   Name = "Enable Anti-AFK",
-   Callback = function()
-      local bb = game:GetService("VirtualUser")
-      game.Players.LocalPlayer.Idled:Connect(function()
-         bb:CaptureController()
-         bb:ClickButton2(Vector2.new())
-      end)
-      Rayfield:Notify({Title = "Anti-AFK", Content = "Anti-AFK is now active.", Duration = 3})
+
+MiscTab:CreateToggle({ -- เปลี่ยนจากปุ่มเป็น toggle — กดซ้ำไม่ซ้อน signal
+   Name = "Anti-AFK",
+   CurrentValue = false,
+   Flag = "AntiAFK",
+   Callback = function(Value)
+      if Value then
+         if not AntiAFKConn then
+            AntiAFKConn = LocalPlayer.Idled:Connect(function()
+               VirtualUser:CaptureController()
+               VirtualUser:ClickButton2(Vector2.new())
+            end)
+         end
+      elseif AntiAFKConn then
+         AntiAFKConn:Disconnect()
+         AntiAFKConn = nil
+      end
    end,
 })
